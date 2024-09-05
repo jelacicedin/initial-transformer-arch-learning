@@ -11,6 +11,8 @@ services:
           - "~/.gitconfig:/etc/gitconfig" # carry over username
           - "/mnt/c/Users/ejc01/AppData/Roaming/Code/User:/root/.local/share/code-server" # carry over local VS code settings
           - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519 # carry over SSH key
+        environment:
+          - SSH_AUTH_SOCK=/root/.ssh/id_ed25519
         deploy:
           resources:
             reservations:
