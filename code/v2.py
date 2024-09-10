@@ -6,9 +6,9 @@ torch.manual_seed(1337)
 
 batch_size = 32
 block_size = 8
-max_iters = 3000
-eval_interval = 300
-learning_rate = 1e-2
+max_iters = 5000
+eval_interval = 500
+learning_rate = 1e-3
 device = "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 200
 n_embed = 32
@@ -91,6 +91,19 @@ class Head(nn.Module):
         return out
 
 
+class MultiHeadAttention(nn.Module):
+    """Multiple heads of self-attention in parallel"""
+
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.heads = nn.ModuleList(Head(head_size) for _ in range(num_heads))
+
+    def forward(self, x):
+        return torch.cat(
+            [h(x) for h in self.heads], dim=-1
+        )  # simply concat the outpus of all the heads, over the channel dimension
+
+
 # Implement the bigram language model
 class BigramLanguageModel(nn.Module):
     def __init__(self):
@@ -98,7 +111,9 @@ class BigramLanguageModel(nn.Module):
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = Head(n_embed)
+        self.sa_heads = MultiHeadAttention(
+            4, n_embed // 4
+        )  # i.e. 4 heads of 8-dimensional self-attention
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -112,6 +127,7 @@ class BigramLanguageModel(nn.Module):
         x = (
             token_emb + pos_emb
         )  # (B, T, C) # x holds not just the token identities but also the positions at which they occur, not overly useful rn since it's all just a bigram model
+        x = self.sa_heads(x)
         logits = self.lm_head(x)  # (B,T,vocab_size)
 
         if targets is None:
@@ -137,8 +153,10 @@ class BigramLanguageModel(nn.Module):
         idx = idx.to(device)
         # idx is (B,T) array of indices in the current context
         for _ in range(max_new_tokens):
+            # crop idx to the last block size in the current context
+            idx_cond = idx[:, -block_size:]
             # get the preds
-            logits, loss = self(idx)
+            logits, loss = self(idx_cond)
             # focus only on the last time step
             logits = logits[:, -1, :]  # becomse (B,C)
             # apply softmax to get probs
